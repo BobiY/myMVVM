@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>data binding test</title>
+</head>
+<body>
+ 
+    <div id="binding">
+        <p upon-click ="fun2">{{name}}</p>
+        <button upon-click="fun">{{buttonName}}</button>
+        <div upon-click = "fun3">
+            2222222222222222222
+        <div upon-click = "fun4">
+            33333
+            <div upon-click = "fun5">
+                444444
+            </div>
+        </div>
+        </div>
+        <ul upon-for = "item in todo">
+            <li>
+                <h3> 我是好学生 </h3>
+                <p upon-click = "fun6"> {{ item.name }} </p>
+                <p> {{ item.value }} 
+                    <span>{{ item.key }}
+                        <em style="color:brown">{{ item.num }}</em>  
+                    </span>
+                </p>
+            </li>
+        </ul>
+    </div>
+    <script src="./lifeCycle.js"></script>
+    <script src="./util.js"></script>
+    <script type="text/javascript">
+        /**
+            1. 数据状态保持同步
+            2. 强化模板解析
+            3. 事件绑定
+            4. 视图更新
+            5. 渲染元素获取
+            6. 降低函数之间的耦合度
+            7. 列表绑定事件
+            8. 列表数据现阶段不会更新，没有加入检测数据之列
+            9. 渲染的标签中不应该有模板的标记
+            10. 不能每次刷新就去重新绑定事件
+        */
+        //console.log(lifeCycleFun)  //didMount
+        // 创建实例的函数
+        function dataBinding(obj) {  // 实例属性应该整理下
+            this._el = obj.id || '';  // 获取出入 id
+            this._didMount = obj.didMount || this.didMount; // 渲染后执行的函数  生命周期函数
+            this._beforeMount = obj.beforeMount || this.beforeMount;
+            this._beforeUpdate = obj.beforeUpdate || this.beforeUpdate;
+            this._didUpdate = obj.didUpdate || this.didUpdate;
+            this._data = obj.data || {}; // 渲染要用到的数据
+            this._methods = obj.methods || {}; // 内部执行的方法
+            this.event = {};
+            this.dom = {};
+            this.init = {};
+            this.cahsh = {}; // 用于缓存列表字符串
+            this.timer = null; // 用于监控数据更新 
+            this.dom._context = document.getElementById(this._el);
+            this.originStr = this.dom._context.innerHTML;//缓存原始字符串
+            
+            var variable = this.getVariable(); // 获得需要的变量  模板处理时，将添加的自定义属性值去掉，保留初次输入的字符串
+            this.renderStart(variable);
+            this._didMount(); // 生命周期函数，挂在后
+ 
+            return this; // 返回实例对象
+        }
+ 
+        // 此函数开始执行渲染操作
+        dataBinding.prototype.renderStart = function(variable) {
+            this.digestVariable(variable);
+            this.analyseMethods(true); // 进行事件绑定
+        };
+        
+        //挂载生命周期方法
+        lifeCycleFun.forEach( item => {
+            dataBinding.prototype[item.name] = item.value; 
+        } )
+
+        dataBinding.prototype.getVariable = function() {  //只匹配非列表数据  列表数据单独处理 这部分需要优化
+            var re = /\{\{\w*\}\}/g;  // 匹配数据的正则
+            var result = this.originStr.match(re); // 进行匹配，将用到的变量提取出来
+            for (var i = result.length - 1; i >= 0; i--) {
+                result[i] = result[i].replace('{{', ''); // 去掉前后的双大括号
+                result[i] = result[i].replace('}}', '');
+            };
+            return result;  // 返会匹配到的变量
+        };
+ 
+        dataBinding.prototype.renderDOM = function(DOMRendered) {
+            this.dom._context.innerHTML = DOMRendered; // 渲染更新后的Dom
+        };
+ 
+        dataBinding.prototype.makeDOM = function(dom, isChange) {
+            // dom 是变量键值对的数组
+            isChange = isChange || false;
+ 
+            this.dom.newerInnerHTML = '';
+            // 这步子我感觉没必要
+            for (var i = 0; i < this.originStr.length; i++) {
+                this.dom.newerInnerHTML += this.originStr[i];                   
+            };
+            //var re = /up.+"/g;
+            // 使用变量的值去替换变量
+            for (var i = 0; i < dom.length; i++) {
+ 
+                if(!dom[i]) {
+                    continue;
+                }
+ 
+                var key = dom[i].key;
+                var val = dom[i].val;
+ 
+                this.dom.newerInnerHTML = this.dom.newerInnerHTML.replace('{{' + key + '}}', val); //更新数据  更新的只是给列表数据
+            };
+            if( !isChange ){
+                this._beforeMount();
+            }
+            this.renderDOM(this.dom.newerInnerHTML);
+ 
+        };
+        
+        dataBinding.prototype.digestVariable = function(variable) {
+            //  variable 表示的是使用过的变量
+            var validVariable = [];
+            var dom = [];
+ 
+            for (var i = 0; i < variable.length; i++) {
+                var currentVar = variable[i];
+                var flag = false; // 标记，用于判断变量是否存在
+                var val = ''; 
+                for(var key in this._data) {
+                    if(currentVar == key) {
+                        flag = true;
+                        val = this._data[currentVar];
+                    }
+                }
+                if(!flag) {
+                    throw 'variable ' + currentVar + ' is undefined';
+                }else {
+                    dom.push({
+                        key: currentVar,
+                        val: val
+                    });
+ 
+                    this[currentVar] = val; // 将这个值挂载在实例对象上，方便操作
+                    this.watch(currentVar); // 脏数据检测
+                }
+            };
+            
+            // 将列表数据进行绑定，这里存在的问题就是，不管列表数据是否使用都做了绑定
+            for( keys in this._data ){
+                var arr = [];
+                arr = dom.filter( item => {  // 优化
+                    return keys === item.key
+                } )
+                if( arr.length == 0 ){
+                    dom.push({
+                        key: keys,
+                        val: this._data[keys]
+                    })
+                    this[keys] = this._data[keys]; // 将这个值挂载在实例对象上，方便操作
+                    this.watch(keys); // 进行数据双向绑定
+                }
+            }
+            this.init.dom = dom; // 保存的初始化数据
+            this.makeDOM(dom); // 生成初始化的 dom
+ 
+            return validVariable;  // 返回了一个空数组
+ 
+        };
+        
+        // 进行脏数据检验
+        dataBinding.prototype.watch = function(key) {
+            var self = this;
+       
+            Object.defineProperty(self, key, {
+                set: function(x, y) {
+                    var self = this;
+                    var nextValue = x;
+                    var dataState = true;
+                    var dataIndex = this.findIndexOfData({
+                        key: key,
+                        val: nextValue
+                    }) // 判断当前的值是否在数据中存在
+                    
+                    // 控制数据状态，防止同一个数据的同一个值重复更新
+                    //console.log(key,x)
+                    if(dataIndex != -1) { 
+                        var prevVAlue = this.init.dom[dataIndex].val;
+                        
+                        if( prevVAlue === nextValue ){  // 防止相同数据重复更新
+                            dataState = false;
+                        }
+                        this._beforeUpdate();  // 这里修改数据就会造成死循环
+
+                        if( dataState ){
+                            // this._beforeUpdate();  // 如果这个生命周期函数放在这里，更新数据时不会造成死循环
+                            
+                            // 更新数据  直接覆盖老数据
+                            this.init.dom[dataIndex] = {
+                                key: key,
+                                val: x
+                            };
+                            // 收集数据，批量更新
+                            if( !this.timer ){
+                                this.timer = setTimeout( function(){
+                                    // 执行 dom 更新
+                                    self.makeDOM(self.init.dom, true);
+                                    // 因为是用的 innerHTML 的方式，所以每次更新 dom 都要重新去更新元素事件绑定
+                                    self.createEvent(self.dom._context); // 进行事件绑定
+                                    this.timer = null;
+                                } )
+                            }
+                            self._didUpdate() // 此处修改数据没问题
+                        }
+                    }
+ 
+                },
+                get:function(){
+                    // 主要是使用 this.XXX 时返回当前使用的数据，保持数据状态一致
+                    for( var i = 0;i< this.init.dom.length;i++ ){
+                        if( this.init.dom[i] && (this.init.dom[i].key == key) ){
+                            if(this.init.dom[i].val.length){
+                                return  coryArr(this.init.dom[i].val); 
+                            }else{
+                                return this.init.dom[i].val;
+                            }
+                        }
+                    }
+                }
+            });
+ 
+        };
+
+        // 找出数据的位置  工具方法
+        dataBinding.prototype.findIndexOfData = function(data) {
+            for (var i = 0; i < this.init.dom.length; i++) {
+                var currentData = this.init.dom[i];
+                if(!currentData) {
+                    continue;
+                }
+                if(data.key == currentData.key) {
+                    return i; 
+                }
+            };
+ 
+            return -1;
+ 
+        };
+        dataBinding.prototype.removeSign = function( ele,attrName ){
+            ele.removeAttribute( attrName )
+        }
+        // 每次数据更新刷新视图时，更新事件列表，列表数据也在这里更新和初始化
+        dataBinding.prototype.createEvent = function(cxt){
+            
+            var re = /\S+/g;
+            var self = this;
+            this.getAllEvts();
+            var nodeList = cxt.children;
+ 
+            for (var i = 0; i < nodeList.length; i++) {
+                var childNode = nodeList[i];
+                var attrs = childNode.attributes;
+                attrs = Array.prototype.slice.call(attrs);
+                for (var j = 0; j < attrs.length; j++) {
+                    var attr = attrs[j];
+                    if( attr.name.indexOf("for") !== -1 ){  // 检测列表渲染时要做优化
+                        // 这块是利用先改变列表中的内容，然后再进行事件绑定检测
+                        this.getList( childNode,attr.value.match(re) );
+                        this.removeSign( childNode,attr.name )
+                    }
+                    if(this._evts.indexOf(attr.name) != -1) {
+                        this.removeSign( childNode,attr.name )
+                        if(this.isMethodInList(attr.value)) {
+                            if( !this.event[attr.name.split('-')[1]] ){
+                                this.event[attr.name.split('-')[1]] = [];
+                                this.event[attr.name.split('-')[1]].push({ ele:childNode,fun:self._methods[attr.value] })
+                            }else{
+                                this.event[attr.name.split('-')[1]].push({ ele:childNode,fun:self._methods[attr.value] })   
+                            }
+                        }else {
+                            throw 'method: ' + attr.value + ' is not defined';
+                        }
+ 
+                    }
+                };
+                if( childNode.children.length !== 0 ){
+                    this.createEvent(childNode)
+                }
+            };
+
+        }
+        // 使用事件委托去绑定事件
+        dataBinding.prototype.analyseMethods = function(  ) {
+            var cxt = this.dom._context;
+            var self = this;
+            // 初始化事件绑定
+            this.createEvent(this.dom._context);
+            
+            //进行事件委托  闭包，保存每个 key 值
+            for( var key in this.event ){
+                (function(key){
+                    if( self.event[key].length !== 0 ){  
+                        cxt.addEventListener(key,function(e){
+                            for( var k = 0; k < self.event[key].length;k++ ){
+                                if( e.target == self.event[key][k].ele ){
+                                    // 将实例对象的所有数据传递给回掉函数,方便后续操作
+                                    self.event[key][k].fun.bind(self)(self.init.dom);
+                                    break;
+                                }
+                            }
+                        },false)
+                    } 
+                })(key)
+            }
+
+ 
+        };
+
+        // 主要用于渲染列表
+        dataBinding.prototype.getList = function( ele,arr ){
+            var arr1 = this.init.dom.filter( item => item.key === arr[arr.length-1] )
+            if( arr1.length === 0 ){  // 列表数据存在性检测处理，不存在就主动抛出错误
+                throw 'data: ' + arr[arr.length-1] + ' is not defined';
+            }
+            var data = arr1[0].val
+            //console.log( data,arr1 )
+            var reg1 = /{{.+}}/g;
+            var reg2 = /\w+/g;
+            var context = ele.innerHTML;
+            var newContent = "";
+            if( !this.cahsh[arr[arr.length -1]] ){  // 列表第一渲染时保存原始字符串
+                this.cahsh[arr[arr.length -1]] = context;
+            }else{
+                context = this.cahsh[arr[arr.length -1]]; // 非第一次时使用缓存进行操作
+            }
+            var bAA = context.match( reg1 );
+            data.forEach( item => {
+                str = context.replace( reg1 ,( ss ) => {
+                    var finallyStr = ""; 
+                    var re = /\./g;
+                    bAA.forEach( subItem => {
+                        if( subItem.indexOf(".") !== -1 ){
+                            var arr = subItem.match( reg2 );
+                            if(ss.indexOf(arr[1]) !== -1 ){
+                                finallyStr = item[arr[1]];   
+                            } 
+                        }else{
+                            finallyStr = item;
+                        }
+                    } )
+                    return finallyStr;
+                } );
+                newContent += str;
+                
+            } )
+            // 每次重新写入，都需要刷新事件绑定元素
+            // 写入列表先于事件绑定检测，所以列表元素的事件能正常绑定
+            ele.innerHTML = newContent;
+        }
+ 
+        dataBinding.prototype.getAllEvts = function() {
+            this._evts = [];
+ 
+            for (var key in document) {
+                if(key.indexOf('on') === 0) {
+                    key = key.replace('on', 'upon-');
+                    this._evts.push(key);
+                }
+            }
+        };
+ 
+        dataBinding.prototype.isMethodInList = function(val) {
+            var flag = false;
+            for(var fnName in this._methods) {
+                if(fnName == val) {
+                    flag = true;
+                }
+            }
+            return flag;
+        };
+ 
+        dataBinding.prototype.getObjectLength = function(obj) {
+            var count = 0;
+            for (var key in obj) {
+                count ++;
+            }
+ 
+            return count;
+        };
+ 
+        var db = new dataBinding({
+            id: 'binding',
+            data: {
+                name: 'test',
+                sex: 'you',
+                haha: '2333',
+                buttonName: 'ahha',
+                num:1,
+                todo:[
+                    {name:"aa",value:44,key:1,num:1111},
+                    {name:"bb",value:55,key:2,num:2222},
+                    {name:"cc",value:66,key:3,num:3333}
+                ]
+            },
+ 
+            didMount: function() {
+                console.log('didMount');
+                //this.name = "my data binding";
+            },
+            beforeMount:function(){
+                console.log("beforeMount")
+                //this.name = "my data 11111111111111111";
+            },
+            beforeUpdate:function(){
+                console.log("beforeUpdate");
+                //this.name = "my data binding";
+            },
+            didUpdate:function(){
+                console.log("didUpdate")
+                //this.name = "yes, this is aaaaa";
+            },
+            methods: {
+                fun: function() {    
+                    this.name = "yes, this is mvvm";
+                    this.sex = "we do it"
+                },
+ 
+                fun2: function() {
+                    console.log('dbclick');
+                },
+                fun3:function(){
+                     console.log("经过我了")
+                },
+                fun4:function(){
+                    console.log(4444444444444444444)
+                },
+                fun5:function(){
+                    console.log("我是第五个函数")
+                },
+                fun6:function(data){
+                    // 添加列表数据  数组是对象，引用的是同一个对象
+                    arr = this.todo;
+                    arr.push(  {name:"dd",value:"我是添加的",key:4,num:4444} )
+                    this.todo = arr;
+                    // data 是当前实例的所有数据
+                    alert("我是列表啊")
+                }
+            }
+        });
+
+    </script>
+ 
+</body>
+</html>

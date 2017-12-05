@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+</head>
+<body>
+    <div id="app">
+            <ul upon-for = "i in todo">
+                    <li>
+                            <h3> 我是好学生 </h3>
+                            <p upon-click = "fun5"> {{ item.name }} </p>
+                            <p> {{ item.value }} 
+                                <span>{{ item.key }}
+                                    <em style="color:brown">{{ item.num }}</em>  
+                                </span>
+                            </p>
+                        </li>
+                </ul>
+    </div>
+</body>
+<script src="./dataCollection.js"></script>
+<script>
+    var todo =[
+    {name:"aa",value:44,key:1,num:1111},
+    {name:"bb",value:55,key:2,num:2222},
+    {name:"cc",value:66,key:3,num:3333}
+]
+    var re = /\S+/g;
+    var ele = document.getElementById('app');
+    var text = [];
+    function getText(ele){
+        
+        var childNodeList = ele.children;
+        for( var i = 0; i< childNodeList.length; i++ ){
+            var elem = childNodeList[i];
+            var attr = elem.attributes;
+           // console.log(attr);
+            for(var j = 0; j< attr.length; j++ ){
+                if( attr[j].name.indexOf("for") !== -1 ){
+                    getList( elem,attr[j].value.match(re) );
+                    elem.removeAttribute("upon-for")
+                }
+            }
+            var elemChildren = elem.children;
+            if( elemChildren.length === 0 ){
+                text.push( elem.innerHTML ); // 保留文本节点？
+            }else{
+                getText(elem)
+            }
+        }
+    }
+
+    getText(ele);
+
+    // 目前只解决了一层嵌套循换，多层没有确定
+    // 这里是继续操作字符串还是操作元素
+    // 怎么做到数据与匹配标签一一对应
+    function getList( ele,arr ){
+        //var reg = /<\S+>/g;
+        var reg1 = /{{.+}}/g;
+        var reg2 = /\w+/g;
+        var context = ele.innerHTML;
+        var newContent = "";
+        var bAA = context.match( reg1 );
+        todo.forEach( item => {
+            str = context.replace( reg1 ,( ss ) => {
+                var finallyStr = ""; 
+                var re = /\./g;
+                bAA.forEach( subItem => {
+                    if( subItem.indexOf(".") !== -1 ){
+                        var arr = subItem.match( reg2 );
+                        if(ss.indexOf(arr[1]) !== -1 ){
+                            finallyStr = item[arr[1]];   
+                        } 
+                    }else{
+                        finallyStr = item;
+                    }
+                } )
+                return finallyStr;
+            } );
+            //console.log(str)
+            newContent += str;
+        } )
+        // 每次重新写入，都需要刷新事件绑定元素
+        ele.innerHTML = newContent;
+    }
+    var aa = ele.innerHTML;
+    var re = /up.+"/;
+    //console.log( aa.match(re) )
+    //console.log( aa.replace( re,"" ) )
+</script>
+</html>
